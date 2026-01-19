@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #ffffff;
+  --bg-surface: #f8f9fa;
+  --bg-surface-hover: #f0f1f3;
+  --text-primary: #1a1a1a;
+  --text-secondary: #6b7280;
+  --border-subtle: rgba(0,0,0,0.08);
+  --border-active: rgba(0,0,0,0.16);
+}
+
+.dark {
+  --bg-base: #000000;
+  --bg-surface: #0F0F10;
+  --bg-surface-hover: #18181B;
+  --text-primary: #EDEDEF;
+  --text-secondary: #8A8F98;
+  --border-subtle: rgba(255,255,255,0.08);
+  --border-active: rgba(255,255,255,0.16);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
