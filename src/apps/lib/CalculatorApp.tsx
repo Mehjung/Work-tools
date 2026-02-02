@@ -501,15 +501,8 @@ export function CalculatorApp() {
         // Nach ( nur - erlaubt (Vorzeichen)
         if (lastChar === '(' && char !== '-') continue
         
-        // Nach Operator: normalerweise ersetzen (letzter gewinnt)
+        // Nach Operator: IMMER ersetzen (letzter gewinnt, kein +- sichtbar)
         if (lastChar && OPERATORS_SET.includes(lastChar)) {
-          // AUSNAHME: Unäres Minus nicht ersetzen!
-          // - am Anfang (result === '-') oder nach ( (result endet mit '(-')
-          const isUnaryMinus = (result === '-') || result.endsWith('(-')
-          if (isUnaryMinus) {
-            // Operator blockieren, unäres Minus bleibt
-            continue
-          }
           result = result.slice(0, -1)
         }
       }
