@@ -42,6 +42,8 @@
     "@radix-ui/react-toggle-group": "^1.1.1",
     "@radix-ui/react-tooltip": "^1.1.6",
     "@tanstack/react-table": "^8.21.3",
+    "jspdf": "^4.1.0",
+    "jspdf-autotable": "^5.0.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.0",

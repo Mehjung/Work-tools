@@ -6,6 +6,7 @@ import { CalculatorApp } from './apps/CalculatorApp'
 import { HolidayApp } from './apps/HolidayApp'
 import { SickdaysApp } from './apps/SickdaysApp'
 import { AccessRightsApp } from './apps/AccessRightsApp'
+import { VorgriffsApp } from './apps/VorgriffsApp'
 
 // Icons
 const Icons = {
@@ -20,6 +21,7 @@ const Icons = {
   Moon: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>,
   Search: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>,
   Key: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>,
+  Gift: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>,
 }
 
 const APPS = [
@@ -29,6 +31,7 @@ const APPS = [
   { id: 'holidays', name: 'Feiertagsrechner', icon: Icons.Calendar },
   { id: 'sickdays', name: 'Dauerkrank-Rechner', icon: Icons.Medical },
   { id: 'accessrights', name: 'Zugriffsrechte', icon: Icons.Key },
+  { id: 'vorgriff', name: 'Vorgriffsregelung', icon: Icons.Gift },
 ]
 
 interface Tab { id: string; appId: string; title: string }
@@ -98,6 +101,7 @@ function App() {
       case 'holidays': return <HolidayApp />
       case 'sickdays': return <SickdaysApp />
       case 'accessrights': return <AccessRightsApp />
+      case 'vorgriff': return <VorgriffsApp />
       default: return null
     }
   }
