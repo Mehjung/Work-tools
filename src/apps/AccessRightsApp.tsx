@@ -36,9 +36,15 @@ interface SelectOption {
   label: string
 }
 
+interface UserEntry {
+  persNr: string
+  name: string
+  abteilung: string
+  benutzerprofil: string
+}
+
 // ============== WILDCARD MATCHING ALGORITHMS ==============
 
-// Kernalgorithmus: Dynamic Programming Wildcard Matching
 function matchWithWildcards(pattern: string, text: string): boolean {
   const m = pattern.length, n = text.length
   const dp: boolean[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(false))
@@ -59,7 +65,6 @@ function matchWithWildcards(pattern: string, text: string): boolean {
   return dp[m][n]
 }
 
-// Kernalgorithmus: Memoized Pattern Intersection
 function patternsCanIntersect(p1: string, p2: string): boolean {
   const memo = new Map<string, boolean>()
   
@@ -92,7 +97,6 @@ function patternsCanIntersect(p1: string, p2: string): boolean {
   return canMatch(0, 0)
 }
 
-// Kernalgorithmus: Bidirektionales Wildcard Matching
 function bidirectionalWildcardMatch(patternA: string, patternB: string): boolean {
   if (matchWithWildcards(patternA, patternB)) return true
   if (matchWithWildcards(patternB, patternA)) return true
@@ -162,21 +166,32 @@ const selectStyles = {
 
 // ============== MAIN COMPONENT ==============
 export function AccessRightsApp() {
+  // Access data state (1st file)
   const [accessData, setAccessData] = useState<ProfileData[]>([])
   const [fileName, setFileName] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   
-  // TanStack Table State
+  // User data state (2nd file)
+  const [userData, setUserData] = useState<UserEntry[]>([])
+  const [userFileName, setUserFileName] = useState('')
+  const [isDragOverUser, setIsDragOverUser] = useState(false)
+
+  // Search & table state
+  const [searchQuery, setSearchQuery] = useState('')
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [selectedProfile, setSelectedProfile] = useState<string | null>(null)
 
   const stats = useMemo(() => ({
     profiles: accessData.length,
     accesses: accessData.reduce((sum, p) => sum + p.accesses.length, 0)
   }), [accessData])
 
-  // ============== EXCEL PARSING ==============
+  const userStats = useMemo(() => ({
+    users: userData.length
+  }), [userData])
+
+  // ============== EXCEL PARSING: ACCESS DATA (1st file) ==============
   const parseAccessData = useCallback((rows: unknown[][]) => {
     const data: ProfileData[] = []
     for (let i = 1; i < rows.length; i++) {
@@ -188,7 +203,6 @@ export function AccessRightsApp() {
       const profile = String(profileCell).trim()
       const accesses: AccessEntry[] = []
       
-      // Spalte C,F,I... = Abteilung, Spalte D,G,J... = Zugriffsart (rollierend alle 3)
       for (let col = 2; col < row.length; col += 3) {
         const deptCell = row[col]
         const accessCell = row[col + 1]
@@ -204,6 +218,27 @@ export function AccessRightsApp() {
     setAccessData(data)
   }, [])
 
+  // ============== EXCEL PARSING: USER DATA (2nd file) ==============
+  const parseUserData = useCallback((rows: unknown[][]) => {
+    const data: UserEntry[] = []
+    // Data starts at row 3 (index 2), header is row 1-2
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i]
+      if (!row || row.length === 0) continue
+      
+      const persNr = row[0] !== undefined && row[0] !== null ? String(row[0]).trim() : ''
+      const name = row[1] !== undefined && row[1] !== null ? String(row[1]).trim() : ''
+      const abteilung = row[2] !== undefined && row[2] !== null ? String(row[2]).trim() : ''
+      const benutzerprofil = row[7] !== undefined && row[7] !== null ? String(row[7]).trim() : '' // Column H = index 7
+      
+      if (persNr === '' && name === '' && benutzerprofil === '') continue
+      
+      data.push({ persNr, name, abteilung, benutzerprofil })
+    }
+    setUserData(data)
+  }, [])
+
+  // ============== FILE HANDLERS ==============
   const handleFile = useCallback(async (file: File) => {
     try {
       const arrayBuffer = await file.arrayBuffer()
@@ -211,17 +246,12 @@ export function AccessRightsApp() {
       await workbook.xlsx.load(arrayBuffer)
       
       const worksheet = workbook.worksheets[0]
-      if (!worksheet) {
-        alert('Keine Arbeitsblätter gefunden')
-        return
-      }
+      if (!worksheet) return
       
-      // Convert ExcelJS worksheet to row array format
       const rows: unknown[][] = []
       worksheet.eachRow((row, rowNumber) => {
         const rowData: unknown[] = []
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-          // Ensure array is long enough
           while (rowData.length < colNumber - 1) {
             rowData.push(undefined)
           }
@@ -235,16 +265,51 @@ export function AccessRightsApp() {
       setSearchQuery('')
       setColumnFilters([])
       setSorting([])
-    } catch (error) {
-      alert('Fehler beim Lesen der Datei: ' + (error as Error).message)
+      setSelectedProfile(null)
+    } catch {
+      // Silent fail – don't disrupt UX
     }
   }, [parseAccessData])
+
+  const handleUserFile = useCallback(async (file: File) => {
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      
+      const worksheet = workbook.worksheets[0]
+      if (!worksheet) return
+      
+      const rows: unknown[][] = []
+      worksheet.eachRow((row, rowNumber) => {
+        const rowData: unknown[] = []
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          while (rowData.length < colNumber - 1) {
+            rowData.push(undefined)
+          }
+          rowData[colNumber - 1] = cell.value
+        })
+        rows[rowNumber - 1] = rowData
+      })
+      
+      parseUserData(rows)
+      setUserFileName(file.name)
+    } catch {
+      // Silent fail
+    }
+  }, [parseUserData])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
     if (e.dataTransfer.files.length) void handleFile(e.dataTransfer.files[0])
   }, [handleFile])
+
+  const handleUserDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOverUser(false)
+    if (e.dataTransfer.files.length) void handleUserFile(e.dataTransfer.files[0])
+  }, [handleUserFile])
 
   // ============== SEARCH RESULTS ==============
   const searchResults = useMemo((): SearchResult[] => {
@@ -263,6 +328,12 @@ export function AccessRightsApp() {
     }
     return results
   }, [searchQuery, accessData])
+
+  // ============== USERS FOR SELECTED PROFILE ==============
+  const matchedUsers = useMemo((): UserEntry[] => {
+    if (!selectedProfile || userData.length === 0) return []
+    return userData.filter(u => u.benutzerprofil === selectedProfile)
+  }, [selectedProfile, userData])
 
   // ============== UNIQUE VALUES FOR FILTERS ==============
   const uniqueValues = useMemo(() => ({
@@ -333,50 +404,94 @@ export function AccessRightsApp() {
     return values.map(v => ({ value: v, label: v }))
   }
 
+  // Show user panel only when user data is loaded AND a profile is selected
+  const showUserPanel = userFileName !== '' && selectedProfile !== null
+
   // ============== RENDER ==============
   return (
     <div className="h-full flex flex-col overflow-auto p-4 bg-base">
-      <div className="max-w-5xl mx-auto w-full space-y-4">
+      <div className="max-w-[1400px] mx-auto w-full space-y-4">
         
-        {/* Upload Card */}
-        <div className="bg-surface border border-subtle rounded-lg p-4">
-          <h2 className="text-accent font-semibold mb-3 flex items-center gap-2">
-            <span className="w-1 h-5 bg-accent rounded-sm"></span>
-            Excel-Datei laden
-          </h2>
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => document.getElementById('file-input')?.click()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-              fileName ? 'border-green-500/50 bg-green-500/5' :
-              isDragOver ? 'border-accent bg-accent/10' : 'border-subtle hover:border-accent/50'
-            }`}
-          >
-            <p className="text-text-secondary">Excel-Datei hier ablegen oder klicken zum Auswählen</p>
-            <p className="text-text-secondary/60 text-sm mt-1">.xlsx oder .xls</p>
-            <input 
-              id="file-input" 
-              type="file" 
-              accept=".xlsx,.xls" 
-              className="hidden" 
-              onChange={(e) => e.target.files?.[0] && void handleFile(e.target.files[0])} 
-            />
-          </div>
-          {fileName && (
-            <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-              <p className="text-green-400"><strong>✓ Geladen:</strong> {fileName}</p>
-              <div className="flex gap-4 mt-2 text-sm">
-                <span className="text-text-secondary">
-                  <strong className="text-accent">{stats.profiles}</strong> Rechteprofile
-                </span>
-                <span className="text-text-secondary">
-                  <strong className="text-accent">{stats.accesses}</strong> Zugriffseinträge
-                </span>
-              </div>
+        {/* Upload Cards Row */}
+        <div className="flex gap-4 flex-col md:flex-row">
+          {/* Upload Card: Access Data */}
+          <div className="bg-surface border border-subtle rounded-lg p-4 flex-1">
+            <h2 className="text-accent font-semibold mb-3 flex items-center gap-2">
+              <span className="w-1 h-5 bg-accent rounded-sm"></span>
+              Rechteprofile laden
+            </h2>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById('file-input-access')?.click()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                fileName ? 'border-green-500/50 bg-green-500/5' :
+                isDragOver ? 'border-accent bg-accent/10' : 'border-subtle hover:border-accent/50'
+              }`}
+            >
+              <p className="text-text-secondary text-sm">Rechteprofile-Datei hier ablegen oder klicken</p>
+              <p className="text-text-secondary/60 text-xs mt-1">.xlsx oder .xls</p>
+              <input 
+                id="file-input-access" 
+                type="file" 
+                accept=".xlsx,.xls" 
+                className="hidden" 
+                onChange={(e) => e.target.files?.[0] && void handleFile(e.target.files[0])} 
+              />
             </div>
-          )}
+            {fileName && (
+              <div className="mt-3 p-2.5 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <p className="text-green-400 text-sm"><strong>✓</strong> {fileName}</p>
+                <div className="flex gap-4 mt-1 text-xs">
+                  <span className="text-text-secondary">
+                    <strong className="text-accent">{stats.profiles}</strong> Profile
+                  </span>
+                  <span className="text-text-secondary">
+                    <strong className="text-accent">{stats.accesses}</strong> Einträge
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Upload Card: User Data */}
+          <div className="bg-surface border border-subtle rounded-lg p-4 flex-1">
+            <h2 className="font-semibold mb-3 flex items-center gap-2" style={{ color: '#ce93d8' }}>
+              <span className="w-1 h-5 rounded-sm" style={{ background: '#ce93d8' }}></span>
+              Benutzerdaten laden
+            </h2>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragOverUser(true) }}
+              onDragLeave={() => setIsDragOverUser(false)}
+              onDrop={handleUserDrop}
+              onClick={() => document.getElementById('file-input-user')?.click()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                userFileName ? 'border-green-500/50 bg-green-500/5' :
+                isDragOverUser ? 'border-purple-400 bg-purple-400/10' : 'border-subtle hover:border-purple-400/50'
+              }`}
+            >
+              <p className="text-text-secondary text-sm">Benutzerdaten-Datei hier ablegen oder klicken</p>
+              <p className="text-text-secondary/60 text-xs mt-1">.xlsx oder .xls</p>
+              <input 
+                id="file-input-user" 
+                type="file" 
+                accept=".xlsx,.xls" 
+                className="hidden" 
+                onChange={(e) => e.target.files?.[0] && void handleUserFile(e.target.files[0])} 
+              />
+            </div>
+            {userFileName && (
+              <div className="mt-3 p-2.5 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <p className="text-green-400 text-sm"><strong>✓</strong> {userFileName}</p>
+                <div className="flex gap-4 mt-1 text-xs">
+                  <span className="text-text-secondary">
+                    <strong style={{ color: '#ce93d8' }}>{userStats.users}</strong> Benutzer geladen
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Search Card */}
@@ -391,8 +506,9 @@ export function AccessRightsApp() {
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value)
-                setColumnFilters([]) // Reset filters on new search
+                setColumnFilters([])
                 setSorting([])
+                setSelectedProfile(null)
               }}
               disabled={!fileName}
               placeholder="Abteilungsbezeichnung eingeben (z.B. A*, AB?, *XY)"
@@ -410,144 +526,228 @@ export function AccessRightsApp() {
           </p>
         </div>
 
-        {/* Results Card */}
+        {/* Results + User Panel Layout */}
         {searchQuery && (
-          <div className="bg-surface border border-subtle rounded-lg p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-accent font-semibold flex items-center gap-2">
-                <span className="w-1 h-5 bg-accent rounded-sm"></span>
-                Suchergebnisse
-              </h2>
-              <span className="bg-accent text-white px-3 py-1 rounded-full text-sm font-medium">
-                {table.getFilteredRowModel().rows.length} Treffer
-              </span>
+          <div className={`flex gap-4 ${showUserPanel ? 'flex-col lg:flex-row' : ''}`}>
+            {/* Results Card */}
+            <div className={`bg-surface border border-subtle rounded-lg p-4 ${showUserPanel ? 'flex-1 min-w-0' : 'w-full'}`}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-accent font-semibold flex items-center gap-2">
+                  <span className="w-1 h-5 bg-accent rounded-sm"></span>
+                  Suchergebnisse
+                </h2>
+                <div className="flex items-center gap-3">
+                  {userFileName && selectedProfile && (
+                    <span className="text-xs text-text-secondary italic">
+                      Zeile anklicken → Benutzer anzeigen
+                    </span>
+                  )}
+                  <span className="bg-accent text-white px-3 py-1 rounded-full text-sm font-medium">
+                    {table.getFilteredRowModel().rows.length} Treffer
+                  </span>
+                </div>
+              </div>
+
+              {searchResults.length === 0 ? (
+                <div className="text-center py-10 text-text-secondary">
+                  <div className="text-4xl mb-3">🔍</div>
+                  <p className="text-lg">Keine Zugriffsrechte gefunden für "{searchQuery}"</p>
+                </div>
+              ) : (
+                <>
+                  {/* Multi-Select Filters */}
+                  <div className="flex gap-3 mb-4 flex-wrap">
+                    <div className="min-w-[200px] flex-1">
+                      <label className="text-xs text-text-secondary mb-1 block">Rechteprofil</label>
+                      <Select
+                        isMulti
+                        options={uniqueValues.profiles}
+                        value={getFilterValue('profile')}
+                        onChange={(selected) => handleFilterChange('profile', selected)}
+                        placeholder="Alle Profile"
+                        styles={selectStyles}
+                        isClearable
+                        closeMenuOnSelect={false}
+                      />
+                    </div>
+                    <div className="min-w-[200px] flex-1">
+                      <label className="text-xs text-text-secondary mb-1 block">Abteilung</label>
+                      <Select
+                        isMulti
+                        options={uniqueValues.departments}
+                        value={getFilterValue('department')}
+                        onChange={(selected) => handleFilterChange('department', selected)}
+                        placeholder="Alle Abteilungen"
+                        styles={selectStyles}
+                        isClearable
+                        closeMenuOnSelect={false}
+                      />
+                    </div>
+                    <div className="min-w-[200px] flex-1">
+                      <label className="text-xs text-text-secondary mb-1 block">Zugriffsart</label>
+                      <Select
+                        isMulti
+                        options={uniqueValues.accessTypes}
+                        value={getFilterValue('accessType')}
+                        onChange={(selected) => handleFilterChange('accessType', selected)}
+                        placeholder="Alle Zugriffsarten"
+                        styles={selectStyles}
+                        isClearable
+                        closeMenuOnSelect={false}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Table */}
+                  <div className="overflow-x-auto rounded-lg border border-subtle">
+                    <table className="w-full text-sm">
+                      <thead className="bg-accent/10 border-b-2 border-accent">
+                        {table.getHeaderGroups().map(headerGroup => (
+                          <tr key={headerGroup.id}>
+                            {headerGroup.headers.map(header => (
+                              <th 
+                                key={header.id}
+                                className="text-left px-4 py-3 text-accent font-semibold cursor-pointer select-none hover:bg-accent/20"
+                                onClick={header.column.getToggleSortingHandler()}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {flexRender(header.column.columnDef.header, header.getContext())}
+                                  <span className="text-xs">
+                                    {{
+                                      asc: '↑',
+                                      desc: '↓',
+                                    }[header.column.getIsSorted() as string] ?? '↕'}
+                                  </span>
+                                </div>
+                              </th>
+                            ))}
+                          </tr>
+                        ))}
+                      </thead>
+                      <tbody className="divide-y divide-subtle">
+                        {table.getRowModel().rows.map(row => {
+                          const profile = row.original.profile
+                          const isSelected = selectedProfile === profile
+                          return (
+                            <tr 
+                              key={row.id} 
+                              className={`cursor-pointer transition-colors ${
+                                isSelected 
+                                  ? 'bg-purple-500/15 hover:bg-purple-500/20' 
+                                  : 'hover:bg-surface-hover'
+                              }`}
+                              onClick={() => {
+                                if (userFileName) {
+                                  setSelectedProfile(isSelected ? null : profile)
+                                }
+                              }}
+                            >
+                              {row.getVisibleCells().map(cell => (
+                                <td key={cell.id} className="px-4 py-2.5">
+                                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                </td>
+                              ))}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Hint when user data is loaded but nothing selected */}
+                  {userFileName && !selectedProfile && (
+                    <p className="text-xs text-text-secondary/60 mt-2 text-center italic">
+                      Klicke auf eine Zeile, um die zugeordneten Benutzer anzuzeigen
+                    </p>
+                  )}
+
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between mt-4 text-sm text-text-secondary">
+                    <div className="flex items-center gap-2">
+                      <span>Zeilen pro Seite:</span>
+                      <select
+                        value={table.getState().pagination.pageSize}
+                        onChange={e => table.setPageSize(Number(e.target.value))}
+                        className="px-2 py-1 bg-base border border-subtle rounded focus:border-accent focus:outline-none"
+                      >
+                        {[25, 50, 100, 200].map(size => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>
+                        Seite {table.getState().pagination.pageIndex + 1} von {table.getPageCount()}
+                      </span>
+                      <button
+                        onClick={() => table.previousPage()}
+                        disabled={!table.getCanPreviousPage()}
+                        className="px-3 py-1 bg-accent/20 rounded hover:bg-accent/40 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        ←
+                      </button>
+                      <button
+                        onClick={() => table.nextPage()}
+                        disabled={!table.getCanNextPage()}
+                        className="px-3 py-1 bg-accent/20 rounded hover:bg-accent/40 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
-            {searchResults.length === 0 ? (
-              <div className="text-center py-10 text-text-secondary">
-                <div className="text-4xl mb-3">🔍</div>
-                <p className="text-lg">Keine Zugriffsrechte gefunden für "{searchQuery}"</p>
+            {/* User Panel – only visible when user data loaded AND a row is selected */}
+            {showUserPanel && (
+              <div className="bg-surface border border-subtle rounded-lg p-4 lg:w-[340px] flex-shrink-0">
+                <h2 className="font-semibold mb-3 flex items-center gap-2" style={{ color: '#ce93d8' }}>
+                  <span className="w-1 h-5 rounded-sm" style={{ background: '#ce93d8' }}></span>
+                  Zugeordnete Benutzer
+                </h2>
+                <div className="mb-3 p-2.5 rounded-lg border" style={{ borderColor: 'rgba(206,147,216,0.3)', background: 'rgba(206,147,216,0.08)' }}>
+                  <p className="text-xs text-text-secondary">Profil:</p>
+                  <p className="font-semibold text-sm" style={{ color: '#ce93d8' }}>{selectedProfile}</p>
+                </div>
+
+                {matchedUsers.length === 0 ? (
+                  <div className="text-center py-6 text-text-secondary">
+                    <div className="text-2xl mb-2">👤</div>
+                    <p className="text-sm">Keine Benutzer mit diesem Profil gefunden</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs text-text-secondary">{matchedUsers.length} Benutzer gefunden</span>
+                    </div>
+                    <div className="max-h-[400px] overflow-y-auto rounded-lg border border-subtle">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0" style={{ background: 'rgba(206,147,216,0.1)' }}>
+                          <tr className="border-b-2" style={{ borderColor: 'rgba(206,147,216,0.4)' }}>
+                            <th className="text-left px-3 py-2 font-semibold" style={{ color: '#ce93d8' }}>Pers.-Nr.</th>
+                            <th className="text-left px-3 py-2 font-semibold" style={{ color: '#ce93d8' }}>Name</th>
+                            <th className="text-left px-3 py-2 font-semibold" style={{ color: '#ce93d8' }}>Abteilung</th>
+                            <th className="text-left px-3 py-2 font-semibold" style={{ color: '#ce93d8' }}>Profil</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-subtle">
+                          {matchedUsers.map((user, idx) => (
+                            <tr key={idx} className="hover:bg-surface-hover">
+                              <td className="px-3 py-2 font-mono">{user.persNr}</td>
+                              <td className="px-3 py-2">{user.name}</td>
+                              <td className="px-3 py-2">{user.abteilung}</td>
+                              <td className="px-3 py-2">
+                                <code className="bg-base px-1.5 py-0.5 rounded text-[10px]">{user.benutzerprofil}</code>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
-            ) : (
-              <>
-                {/* Multi-Select Filters */}
-                <div className="flex gap-3 mb-4 flex-wrap">
-                  <div className="min-w-[200px] flex-1">
-                    <label className="text-xs text-text-secondary mb-1 block">Rechteprofil</label>
-                    <Select
-                      isMulti
-                      options={uniqueValues.profiles}
-                      value={getFilterValue('profile')}
-                      onChange={(selected) => handleFilterChange('profile', selected)}
-                      placeholder="Alle Profile"
-                      styles={selectStyles}
-                      isClearable
-                      closeMenuOnSelect={false}
-                    />
-                  </div>
-                  <div className="min-w-[200px] flex-1">
-                    <label className="text-xs text-text-secondary mb-1 block">Abteilung</label>
-                    <Select
-                      isMulti
-                      options={uniqueValues.departments}
-                      value={getFilterValue('department')}
-                      onChange={(selected) => handleFilterChange('department', selected)}
-                      placeholder="Alle Abteilungen"
-                      styles={selectStyles}
-                      isClearable
-                      closeMenuOnSelect={false}
-                    />
-                  </div>
-                  <div className="min-w-[200px] flex-1">
-                    <label className="text-xs text-text-secondary mb-1 block">Zugriffsart</label>
-                    <Select
-                      isMulti
-                      options={uniqueValues.accessTypes}
-                      value={getFilterValue('accessType')}
-                      onChange={(selected) => handleFilterChange('accessType', selected)}
-                      placeholder="Alle Zugriffsarten"
-                      styles={selectStyles}
-                      isClearable
-                      closeMenuOnSelect={false}
-                    />
-                  </div>
-                </div>
-
-                {/* Table */}
-                <div className="overflow-x-auto rounded-lg border border-subtle">
-                  <table className="w-full text-sm">
-                    <thead className="bg-accent/10 border-b-2 border-accent">
-                      {table.getHeaderGroups().map(headerGroup => (
-                        <tr key={headerGroup.id}>
-                          {headerGroup.headers.map(header => (
-                            <th 
-                              key={header.id}
-                              className="text-left px-4 py-3 text-accent font-semibold cursor-pointer select-none hover:bg-accent/20"
-                              onClick={header.column.getToggleSortingHandler()}
-                            >
-                              <div className="flex items-center gap-2">
-                                {flexRender(header.column.columnDef.header, header.getContext())}
-                                <span className="text-xs">
-                                  {{
-                                    asc: '↑',
-                                    desc: '↓',
-                                  }[header.column.getIsSorted() as string] ?? '↕'}
-                                </span>
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      ))}
-                    </thead>
-                    <tbody className="divide-y divide-subtle">
-                      {table.getRowModel().rows.map(row => (
-                        <tr key={row.id} className="hover:bg-surface-hover">
-                          {row.getVisibleCells().map(cell => (
-                            <td key={cell.id} className="px-4 py-2.5">
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Pagination */}
-                <div className="flex items-center justify-between mt-4 text-sm text-text-secondary">
-                  <div className="flex items-center gap-2">
-                    <span>Zeilen pro Seite:</span>
-                    <select
-                      value={table.getState().pagination.pageSize}
-                      onChange={e => table.setPageSize(Number(e.target.value))}
-                      className="px-2 py-1 bg-base border border-subtle rounded focus:border-accent focus:outline-none"
-                    >
-                      {[25, 50, 100, 200].map(size => (
-                        <option key={size} value={size}>{size}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span>
-                      Seite {table.getState().pagination.pageIndex + 1} von {table.getPageCount()}
-                    </span>
-                    <button
-                      onClick={() => table.previousPage()}
-                      disabled={!table.getCanPreviousPage()}
-                      className="px-3 py-1 bg-accent/20 rounded hover:bg-accent/40 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      ←
-                    </button>
-                    <button
-                      onClick={() => table.nextPage()}
-                      disabled={!table.getCanNextPage()}
-                      className="px-3 py-1 bg-accent/20 rounded hover:bg-accent/40 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      →
-                    </button>
-                  </div>
-                </div>
-              </>
             )}
           </div>
         )}
