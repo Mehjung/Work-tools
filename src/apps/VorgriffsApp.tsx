@@ -167,7 +167,7 @@ interface ResultRow {
 function calculate(decData: CSVRow[], febData: CSVRow[], bezugsjahr: number): ResultRow[] {
   const febMap = new Map<string, CSVRow>()
   febData.forEach((r) => febMap.set(cleanPNr(r['PNr']), r))
-  const MAX_FEB_MINS = 79 * 60 + 59
+  const MAX_FEB_MINS = 89 * 60 + 59
   const output: ResultRow[] = []
 
   for (const decRow of decData) {
